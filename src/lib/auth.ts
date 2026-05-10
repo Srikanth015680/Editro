@@ -1,4 +1,4 @@
-import { Plan } from "../generated/prisma/client";
+import { Plan } from "@prisma/client";
 import { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import prisma from "./prisma";
