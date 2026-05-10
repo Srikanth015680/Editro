@@ -58,21 +58,26 @@ export const authOptions: NextAuthOptions = {
           usageCount: 0,
           usageLimit: 3,
         });
+
         return {
-          id: profile.sub, 
+          id: profile.sub,
           email: profile.email,
           name: profile.name,
-          image: profile.picture, 
+          image: profile.picture,
         };
       },
     }),
   ],
+
   secret: process.env.NEXTAUTH_SECRET!,
+
+  trustHost: true,
+
   session: {
     strategy: "jwt",
   },
+
   callbacks: {
-    // JWT callback to add custom fields to the token
     async jwt({ token, user }: { token: any; user: any }) {
       if (user) {
         token.email = user.email;
@@ -83,15 +88,18 @@ export const authOptions: NextAuthOptions = {
       }
       return token;
     },
+
     async session({ session, token }: { session: any; token: any }) {
       session.user.email = token.email;
       session.user.avatar = token.avatar;
       session.user.plan = token.plan;
       session.user.usageCount = token.usageCount;
       session.user.usageLimit = token.usageLimit;
+
       return session;
     },
   },
+
   pages: {
     signIn: "/",
   },
