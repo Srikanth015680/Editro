@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Crown, ImageIcon, Loader2, Upload, X } from "lucide-react";
@@ -9,16 +11,20 @@ import {
   upload,
 } from "@imagekit/next";
 import PaymentModal from "@/components/modals/payment-model";
+import { useSession } from "next-auth/react";
 
 interface UploadZoneProps {
   onImageUpload: (imageUrl: string) => void;
 }
 
 const UploadZone = ({ onImageUpload }: UploadZoneProps) => {
+  const { status } = useSession();
+
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+
   const [usageData, setUsageData] = useState<{
     usageCount: number;
     usageLimit: number;
@@ -27,8 +33,10 @@ const UploadZone = ({ onImageUpload }: UploadZoneProps) => {
   } | null>(null);
 
   useEffect(() => {
-    checkUsage()?.catch(console.error);
-  }, []);
+    if (status === "authenticated") {
+      checkUsage().catch(console.error);
+    }
+  }, [status]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -43,6 +51,7 @@ const UploadZone = ({ onImageUpload }: UploadZoneProps) => {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
+
     const files = Array.from(e.dataTransfer.files);
     handleFiles(files);
   }, []);
@@ -56,8 +65,14 @@ const UploadZone = ({ onImageUpload }: UploadZoneProps) => {
   );
 
   const getUploadAuthParams = async () => {
-    const response = await fetch("/api/upload-auth");
-    if (!response.ok) throw new Error("Failed to get upload auth params");
+    const response = await fetch("/api/upload-auth", {
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to get upload auth params");
+    }
+
     return await response.json();
   };
 
@@ -68,12 +83,13 @@ const UploadZone = ({ onImageUpload }: UploadZoneProps) => {
 
       const result = await upload({
         file,
-        fileName: file?.name,
+        fileName: file.name,
         folder: "Editra-uploads",
         expire,
         token,
         signature,
         publicKey,
+
         onProgress: (event) => {
           console.log(
             `Upload progress: ${(event.loaded / event.total) * 100}%`
@@ -82,6 +98,7 @@ const UploadZone = ({ onImageUpload }: UploadZoneProps) => {
       });
 
       return result.url || "";
+
     } catch (error) {
       if (error instanceof ImageKitInvalidRequestError) {
         throw new Error("Invalid upload request");
@@ -95,47 +112,73 @@ const UploadZone = ({ onImageUpload }: UploadZoneProps) => {
     }
   };
 
+  const checkUsage = async () => {
+    const response = await fetch("/api/usage", {
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to check usage");
+    }
+
+    const data = await response.json();
+
+    setUsageData(data);
+
+    return data;
+  };
+
+  const updateUsage = async () => {
+    const response = await fetch("/api/usage", {
+      method: "POST",
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+
+      if (response.status === 403) {
+        setUsageData(errorData);
+        setShowPaymentModal(true);
+
+        throw new Error("Usage limit reached");
+      }
+
+      throw new Error("Failed to update usage");
+    }
+
+    const data = await response.json();
+
+    setUsageData(data);
+
+    return data;
+  };
+
   const handleFiles = async (files: File[]) => {
-    const imageFile = files?.find((file) => file.type.startsWith("image/"));
+    const imageFile = files.find((file) =>
+      file.type.startsWith("image/")
+    );
+
     if (imageFile) {
       setIsUploading(true);
 
       try {
         await checkUsage();
         await updateUsage();
+
         const imageUrl = await uploadToImageKit(imageFile);
+
         setUploadedImage(imageUrl);
+
         onImageUpload(imageUrl);
+
       } catch (error) {
         console.error("Upload failed:", error);
+
       } finally {
         setIsUploading(false);
       }
     }
-  };
-
-  const checkUsage = async () => {
-    const response = await fetch("/api/usage");
-    if (!response.ok) throw new Error("Failed to check usage");
-    const data = await response.json();
-    setUsageData(data);
-    return data;
-  };
-
-  const updateUsage = async () => {
-    const response = await fetch("/api/usage", { method: "POST" });
-    if (!response.ok) {
-      const errorData = await response.json();
-      if (response.status === 403) {
-        setUsageData(errorData);
-        setShowPaymentModal(true);
-        throw new Error("Usage limit reached");
-      }
-      throw new Error("Failed to update usage");
-    }
-    const data = await response.json();
-    setUsageData(data);
-    return data;
   };
 
   const clearImage = () => {
@@ -151,6 +194,7 @@ const UploadZone = ({ onImageUpload }: UploadZoneProps) => {
     >
       {uploadedImage ? (
         <div className="relative rounded-xl p-4 bg-white/5 backdrop-blur-xl border border-white/10">
+
           <button
             onClick={clearImage}
             className="absolute top-2 right-2 z-10 p-1 bg-black/60 rounded-full hover:bg-red-500/20 transition"
@@ -168,10 +212,9 @@ const UploadZone = ({ onImageUpload }: UploadZoneProps) => {
 
           <div className="mt-3 text-center">
             <p className="text-sm font-medium text-white">
-              {uploadedImage.startsWith("data:")
-                ? "Local preview"
-                : "Uploaded to cloud"}
+              Uploaded to cloud
             </p>
+
             <p className="text-xs text-gray-400">
               Ready for AI magic ✨
             </p>
@@ -196,7 +239,10 @@ const UploadZone = ({ onImageUpload }: UploadZoneProps) => {
             id="file-upload"
           />
 
-          <label htmlFor="file-upload" className="cursor-pointer block text-center">
+          <label
+            htmlFor="file-upload"
+            className="cursor-pointer block text-center"
+          >
             <motion.div
               animate={isDragOver ? { scale: 1.1 } : { scale: 1 }}
               className="mb-4"
@@ -252,10 +298,12 @@ const UploadZone = ({ onImageUpload }: UploadZoneProps) => {
             <span>
               Usage: {usageData.usageCount}/{usageData.usageLimit}
             </span>
+
             {usageData.plan === "Free" && (
               <Crown className="h-3 w-3 text-purple-400" />
             )}
           </div>
+
           <p className="text-xs text-gray-500 mt-1">
             Supports JPG, PNG, WebP up to 10MB
           </p>
